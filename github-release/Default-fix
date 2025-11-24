@@ -1,0 +1,29 @@
+module.exports = {
+  branches: ["main"],
+  plugins: [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        preset: "conventionalcommits",
+        releaseRules: [
+          { type: "feat", release: "minor" },
+          { type: "fix", release: "patch" },
+          { type: "feat!", release: "major" },
+          { breaking: true, release: "major" },
+
+          // ⭐ Default if commit does NOT match any rule → patch
+          { release: "patch" }
+        ]
+      }
+    ],
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/changelog",
+    [
+      "@semantic-release/git",
+      {
+        assets: ["CHANGELOG.md"]
+      }
+    ],
+    "@semantic-release/github"
+  ]
+};
