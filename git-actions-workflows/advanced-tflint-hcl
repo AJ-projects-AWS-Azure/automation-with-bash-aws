@@ -1,0 +1,140 @@
+################################################################################
+# Azure Plugin
+################################################################################
+plugin "azurerm" {
+  enabled = true
+  version = "0.30.0"
+  source  = "github.com/terraform-linters/tflint-ruleset-azurerm"
+}
+
+################################################################################
+# Global Config
+################################################################################
+config {
+  module          = true
+  force           = true
+  disabled_by_default = false
+}
+
+################################################################################
+# Required Tags (enterprise standard)
+################################################################################
+rule "required_tags" {
+  enabled = true
+  tags = [
+    "environment",
+    "owner",
+    "costcenter",
+    "application",
+    "managed_by"
+  ]
+}
+
+################################################################################
+# Allowed Azure Locations (restrict to enterprise-approved regions)
+################################################################################
+rule "azurerm_resource_group_invalid_location" {
+  enabled = true
+
+  # Allowed regions
+  locations = [
+    "eastus",
+    "eastus2",
+    "centralus",
+    "westus2"
+  ]
+}
+
+################################################################################
+# Naming Convention Enforcement
+################################################################################
+rule "terraform_naming_convention" {
+  enabled = true
+  format  = "^[a-z0-9-]{3,50}$"
+}
+
+rule "azurerm_resource_group_name" {
+  enabled = true
+  pattern = "^[a-z0-9-]{3,50}$"
+}
+
+rule "azurerm_storage_account_name" {
+  enabled = true
+  pattern = "^[a-z0-9]{3,24}$"
+}
+
+rule "azurerm_virtual_network_name" {
+  enabled = true
+  pattern = "^[a-z0-9-]{3,50}$"
+}
+
+rule "azurerm_subnet_name" {
+  enabled = true
+  pattern = "^[a-z0-9-]{3,50}$"
+}
+
+rule "azurerm_network_interface_name" {
+  enabled = true
+  pattern = "^[a-z0-9-]{3,50}$"
+}
+
+################################################################################
+# Prevent Deprecated / Disallowed SKUs
+################################################################################
+rule "azurerm_storage_account_disallowed_sku" {
+  enabled = true
+  skus = [
+    "Standard_GRS",
+    "Standard_RAGRS",
+    "Premium_LRS" # example of internal restriction
+  ]
+}
+
+rule "azurerm_virtual_machine_disallowed_size" {
+  enabled = true
+  vm_sizes = [
+    "Standard_A0",
+    "Standard_A1",
+    "Standard_A2"
+  ]
+}
+
+################################################################################
+# Enforce HTTPS Only / Security Baselines
+################################################################################
+rule "azurerm_storage_account_enable_https" {
+  enabled = true
+}
+
+rule "azurerm_storage_account_enforce_ssl" {
+  enabled = true
+}
+
+rule "azurerm_key_vault_enable_rbac_authorization" {
+  enabled = true
+}
+
+################################################################################
+# Forbid Public Exposure
+################################################################################
+rule "azurerm_public_ip" {
+  enabled = true
+  # Disallow public IPs unless explicitly marked as allowed
+  allow_public = false
+}
+
+rule "azurerm_storage_account_allow_blob_public_access" {
+  enabled = true
+  allow_blob_public_access = false
+}
+
+################################################################################
+# Diagnostics & Logging Enforcement
+################################################################################
+rule "azurerm_monitor_diagnostic_setting_missing" {
+  enabled = true
+}
+
+rule "azurerm_storage_account_missing_network_rules" {
+  enabled = true
+}
