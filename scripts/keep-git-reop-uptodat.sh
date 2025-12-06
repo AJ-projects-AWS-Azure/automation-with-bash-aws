@@ -5,7 +5,7 @@ BRANCH_NAME=$1   # e.g., feature/my-new-branch
 COMMIT_MSG=$2    # e.g., "Add login feature"
 
 if [ -z "$BRANCH_NAME" ] || [ -z "$COMMIT_MSG" ]; then
-  echo "Usage: ./keep-git-repo-uptodate.sh <branch_name> <commit_message>"
+  echo "Usage: ./keep-git-repo-uptodat.sh <branch_name> <commit_message>"
   exit 1
 fi
 
