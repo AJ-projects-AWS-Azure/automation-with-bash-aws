@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# Usage: ./git-pr-auto.sh <branch_name> <commit_message> <repo_url>
-# Example: ./git-pr-auto.sh feature/login-fix "Add login fix feature" https://github.com/username/repo
+# Usage: ./keep-git-repo-uptodat.sh <branch_name> <commit_message> <repo_url>
+# Example: ./keep-git-repo-uptodat.sh feature/login-fix "Add login fix feature" https://github.com/username/repo
 
 BRANCH_NAME=$1
 COMMIT_MSG=$2
 REPO_URL=$3
 
 if [ -z "$BRANCH_NAME" ] || [ -z "$COMMIT_MSG" ] || [ -z "$REPO_URL" ]; then
-  echo "Usage: ./git-pr-auto.sh <branch_name> <commit_message> <repo_url>"
+  echo "Usage: ./keep-git-repo-uptodat.sh <branch_name> <commit_message> <repo_url>"
   exit 1
 fi
 
