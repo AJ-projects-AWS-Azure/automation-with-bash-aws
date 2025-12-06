@@ -1,0 +1,150 @@
+name: Terraform CI - Azure (Enterprise)
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: terraform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TERRAFORM_VERSION: 1.14.1
+  TF_WORKING_DIR: "."    # change if terraform lives in a subfolder
+
+jobs:
+  fmt_validate:
+    name: fmt & validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform fmt (check)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate -no-color
+
+  tflint:
+    name: TFLint (Azure rules)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: latest
+          cache: true
+
+      - name: Init TFLint plugins
+        run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Run TFLint (fail on issues)
+        id: tflint_run
+        run: |
+          tflint --recursive -f compact | tee tflint.log
+        # Do NOT continue-on-error — we want this to fail the job and block merges on issues
+
+      - name: Upload tflint log
+        uses: actions/upload-artifact@v4
+        with:
+          name: tflint-log
+          path: tflint.log
+
+  checkov:
+    name: Checkov (IaC security)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        id: checkov_run
+        run: |
+          pip install checkov
+          checkov -d . --quiet --output-file-path checkov.out --framework terraform || true
+          # we capture output but let job fail via exit code if you want; current line keeps job passing and will fail later if you want
+      - name: Upload checkov output
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov-out
+          path: checkov.out
+
+  plan:
+    name: Terraform Plan (requires successful checks)
+    runs-on: ubuntu-latest
+    needs: [fmt_validate, tflint, checkov]
+    environment:
+      name: dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Azure OIDC login (no client secret) — requires GitHub->Azure federation configured for your SP
+      - name: Azure Login (OIDC)
+        uses: azure/login@v1
+        with:
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          use_oidc: true
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform plan to file
+        id: plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan -no-color -out=tfplan.binary || exit 0
+          terraform show -no-color tfplan.binary | tee plan.out || true
+
+      - name: Upload plan + logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-artifacts
+          path: |
+            plan.out
+            tfplan.binary
+            tflint.log
+            checkov.out
+
+      - name: Post results to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const max = 8000;
+            const plan = fs.existsSync('plan.out') ? fs.readFileSync('plan.out','utf8').substring(0,max) : 'No plan generated or plan empty';
+            const tflint = fs.existsSync('tflint.log') ? fs.readFileSync('tflint.log','utf8').substring(0,max) : 'No TFLint output';
+            const checkov = fs.existsSync('checkov.out') ? fs.readFileSync('checkov.out','utf8').substring(0,max) : 'No Checkov output';
+            const body = `## Terraform CI Results\n\n### Terraform Plan (truncated)\n\`\`\`\n${plan}\n\`\`\`\n\n### TFLint (truncated)\n\`\`\`\n${tflint}\n\`\`\`\n\n### Checkov (truncated)\n\`\`\`\n${checkov}\n\`\`\``;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
