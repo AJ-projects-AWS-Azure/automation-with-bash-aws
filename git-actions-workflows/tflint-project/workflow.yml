@@ -1,0 +1,143 @@
+name: Terraform CI - Azure (Enterprise)
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: terraform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TERRAFORM_VERSION: 1.14.1
+  TF_WORKING_DIR: "."
+
+jobs:
+
+  fmt_validate:
+    runs-on: ubuntu-latest
+    name: fmt & validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - run: terraform fmt -check -recursive
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - run: terraform init -input=false
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - run: terraform validate -no-color
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+  tflint:
+    runs-on: ubuntu-latest
+    name: TFLint (Azure rules)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          cache: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Init TFLint plugins
+        run: tflint --init
+
+      - name: Run TFLint (fail on issues)
+        run: tflint --recursive -f compact | tee tflint.log
+
+      - name: Upload tflint log
+        uses: actions/upload-artifact@v4
+        with:
+          name: tflint-log
+          path: tflint.log
+
+  checkov:
+    runs-on: ubuntu-latest
+    name: Checkov (IaC security)
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: |
+          pip install checkov
+          checkov -d . --framework terraform --quiet --output-file-path checkov.out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkov-out
+          path: checkov.out
+
+  plan:
+    runs-on: ubuntu-latest
+    name: Terraform Plan (requires successful checks)
+    needs: [fmt_validate, tflint, checkov]
+    environment:
+      name: dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v1
+        with:
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          use_oidc: true
+
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - run: terraform init -input=false
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - id: plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan -no-color -out=tfplan.binary
+          terraform show -no-color tfplan.binary | tee plan.out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: terraform-artifacts
+          path: |
+            plan.out
+            tfplan.binary
+            tflint.log
+            checkov.out
+
+      - name: Post results to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const max = 8000;
+            const read = p => fs.existsSync(p) ? fs.readFileSync(p,'utf8').substring(0,max) : 'N/A';
+            const body = `## Terraform CI Results
+### Terraform Plan (truncated)
+\`\`\`
+${read('plan.out')}
+\`\`\`
+
+### TFLint (truncated)
+\`\`\`
+${read('tflint.log')}
+\`\`\`
+
+### Checkov (truncated)
+\`\`\`
+${read('checkov.out')}
+\`\`\``;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
