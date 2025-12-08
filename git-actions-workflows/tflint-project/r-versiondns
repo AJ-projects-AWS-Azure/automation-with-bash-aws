@@ -1,0 +1,10 @@
+Tool / Component
+Recommended Version / Constraint
+Terraform CLI
+~> 1.14 (i.e. 1.14.x) or latest 1.x release  
+AzureRM provider
+Use the latest 4.x (e.g. azurerm = "~> 4.0"). 4.x is stable and supported.  
+TFLint
+Latest stable (e.g. v0.60.0)  
+TFLint Azure plugin (azurerm ruleset)
+Latest plugin version (e.g. version = "0.30.0" in .tflint.hcl) — requires TFLint v0.46+.  
